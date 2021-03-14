@@ -1,0 +1,104 @@
+shell rm -rf dump
+shell mkdir dump
+
+
+units real
+atom_style full
+read_data SPCE.data
+include SPCE.forcefield
+
+
+replicate 10 10 10 
+
+variable Nrun equal 1000
+variable Nf equal ${Nrun}/10
+variable Ne equal 10
+variable Nr equal ${Nf}/${Ne}
+variable Ndump equal ${Nrun}/2
+variable Nr_rdf equal 0.5*${Nrun}/${Ne}
+
+variable watMoleMass equal 18.0153 # /(g/mol)
+variable nAvog equal 6.0221415e23 # Avogadro's number
+variable watMoleculeMass equal (${watMoleMass}/${nAvog}) # /(g/molecule)
+variable A3_in_cm3 equal 1e-24 # Angstrom^3 in cm^3
+variable nAtoms equal atoms
+variable nMolecules equal v_nAtoms/3
+
+variable Text equal 298.0
+variable Pext equal 1.0
+
+group hydrogen type 1
+group oxygen type 2
+
+velocity all create ${Text} 1234
+
+neighbor 2.0 bin
+neigh_modify every 1 delay 0 check yes
+
+timestep 1.0
+
+fix constrain all shake 1.0e-4 100 0 b 1 a 1
+# fix removeMomentum all momentum 1 linear 1 1 1
+
+group particle id 1 2 3 
+
+variable xcmx equal xcm(particle,x)
+variable xcmy equal xcm(particle,y)
+variable xcmz equal xcm(particle,z)
+variable vcmx equal vcm(particle,x)
+variable vcmy equal vcm(particle,y)
+variable vcmz equal vcm(particle,z)
+
+
+fix				 NVT all nvt temp  300 300 100
+thermo           100
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz 
+dump             1 all custom 1000  ./dump/nvt.lammpstrj id type x y z vx vy vz fx fy fz 
+
+fix              velpos all ave/time 10 1 10  v_vcmx v_vcmy v_vcmz  v_xcmx v_xcmy v_xcmz file ./dump/velocity_position_nvt.out
+
+run				 1000000
+unfix   	     NVT
+undump           1 
+unfix            velpos
+write_restart    ./dump/nvt.nvt
+write_data       ./dump/nvt.data
+
+
+
+fix				 NPT all npt temp  300 300 100 iso 1 1 1000 
+thermo           100
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz 
+dump             2 all custom 1000  ./dump/npt.lammpstrj id type x y z vx vy vz fx fy fz 
+
+
+fix              velpos all ave/time 10 1 10  v_vcmx v_vcmy v_vcmz  v_xcmx v_xcmy v_xcmz file ./dump/velocity_position_npt.out
+
+run				 1000000
+unfix            velpos
+unfix   	     NPT
+
+write_restart    ./dump/npt.rst
+write_data       ./dump/npt.data
+
+
+
+
+fix              NVE all nve
+
+thermo           1000
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz 
+dump             1 all custom 1000  ./dump/nve.lammpstrj id type x y z vx vy vz fx fy fz 
+
+fix              velpos all ave/time 10 1 10  v_vcmx v_vcmy v_vcmz  v_xcmx v_xcmy v_xcmz file ./dump/velocity_position_nve.out
+
+run				 1000000
+unfix            velpos
+unfix            NVE
+write_restart    ./dump/nve.rst
+write_data       ./dump/nve.data
+
+
+
+
+

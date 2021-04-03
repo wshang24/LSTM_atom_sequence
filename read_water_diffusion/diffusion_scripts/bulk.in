@@ -1,0 +1,131 @@
+shell rm -rf dump
+shell mkdir dump
+
+
+units real
+atom_style full
+read_data SPCE.data
+include SPCE.forcefield
+
+
+replicate 10 10 10 
+
+variable Nrun equal 1000
+variable Nf equal ${Nrun}/10
+variable Ne equal 10
+variable Nr equal ${Nf}/${Ne}
+variable Ndump equal ${Nrun}/2
+variable Nr_rdf equal 0.5*${Nrun}/${Ne}
+
+variable watMoleMass equal 18.0153 # /(g/mol)
+variable nAvog equal 6.0221415e23 # Avogadro's number
+variable watMoleculeMass equal (${watMoleMass}/${nAvog}) # /(g/molecule)
+variable A3_in_cm3 equal 1e-24 # Angstrom^3 in cm^3
+variable nAtoms equal atoms
+variable nMolecules equal v_nAtoms/3
+
+variable Text equal 298.0
+variable Pext equal 1.0
+
+group hydrogen type 1
+group oxygen type 2
+
+
+# group water type 3 4
+
+
+velocity all create ${Text} 1234
+
+neighbor 2.0 bin
+neigh_modify every 1 delay 0 check yes
+
+timestep 1.0
+
+fix constrain all shake 1.0e-4 100 0 b 1 a 1
+# fix removeMomentum all momentum 1 linear 1 1 1
+
+
+fix				 NVT all nvt temp  300 300 100
+thermo           1000
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz 
+dump             1 oxygen custom 100  ./dump/nvt.lammpstrj id type x y z vx vy vz fx fy fz 
+
+run				 2000000
+unfix   	     NVT
+undump           1 
+write_restart    ./dump/nvt.nvt
+write_data       ./dump/nvt.data
+
+
+fix				 NPT all npt temp  300 300 100 iso 1 1 1000 
+thermo           100
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz 
+dump             2 oxygen custom 100  ./dump/npt.lammpstrj id type x y z vx vy vz fx fy fz 
+
+
+run				 2000000
+unfix   	     NPT
+
+write_restart    ./dump/npt.rst
+write_data       ./dump/npt.data
+
+
+
+group particle id 1 2 3 
+
+group single_O id 1 
+
+# all oxygen
+compute         1  oxygen vacf
+fix             11 oxygen vector 1 c_1[1]
+fix             12 oxygen vector 1 c_1[2]
+fix             13 oxygen vector 1 c_1[3]
+fix             14 oxygen vector 1 c_1[4]
+
+
+variable        diff equal dt*trap(f_11)
+
+
+variable xcmx equal xcm(particle,x)
+variable xcmy equal xcm(particle,y)
+variable xcmz equal xcm(particle,z)
+variable vcmx equal vcm(particle,x)
+variable vcmy equal vcm(particle,y)
+variable vcmz equal vcm(particle,z)
+
+
+variable    p equal 2000     # correlation length
+variable    s equal 1       # sample interval
+variable    d equal $p*$s   # dump interval
+
+fix          SS all ave/correlate $s $p $d &
+             v_vcmx v_vcmy v_vcmz   & 
+             type auto file ./dump/S0St.dat ave running
+
+variable     v11 equal trap(f_SS[3])
+variable     v22 equal trap(f_SS[4])
+variable     v33 equal trap(f_SS[5])
+
+variable     vcor equal (v_v11+v_v22+v_v33)/3.0
+
+
+fix              NVE all nve
+
+fix 1 all ave/time 10 1 10 c_1[1] c_1[2] c_1[3] c_1[4]  file single_O_VACF.txt
+
+
+thermo           $d
+thermo_style     custom step temp etotal ke pe  press  pxx pyy pzz   lx ly lz  v_diff  v_vcor
+
+dump             1 oxygen custom 100  ./dump/nve.lammpstrj id type x y z vx vy vz fx fy fz 
+
+fix              velpos all ave/time 10 1 10  v_vcmx v_vcmy v_vcmz  v_xcmx v_xcmy v_xcmz file ./dump/velocity_position_nve.out
+
+run				 10000000
+write_restart    ./dump/nve.rst
+write_data       ./dump/nve.data
+
+
+
+
+
